@@ -43,7 +43,7 @@ export const TEAM_LOGOS: Record<string, string> = {
 
 // Environment variables should be accessed through a config file to handle TypeScript issues
 // export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-// export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
+// export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 // export const IS_PROD = import.meta.env.PROD;
 
 export const PAYMENT_STATUSES = {

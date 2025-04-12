@@ -1,6 +1,6 @@
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string;
-  readonly VITE_SUPABASE_KEY: string;
+  readonly VITE_SUPABASE_ANON_KEY: string;
   readonly PROD: boolean;
 }
 
@@ -12,7 +12,7 @@ interface ImportMeta {
 const config = {
   supabase: {
     url: import.meta.env.VITE_SUPABASE_URL || '',
-    key: import.meta.env.VITE_SUPABASE_KEY || '',
+    key: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
   },
   environment: {
     isProd: import.meta.env.PROD || false,
