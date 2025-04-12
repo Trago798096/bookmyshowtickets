@@ -1,21 +1,23 @@
-import { Match, TicketType, Booking, upiDetails, LoginCredentials } from "@shared/schema";
+import { Match, TicketType, Booking, LoginCredentials } from "@shared/schema";
+import { Database } from "@shared/supabase-types";
 import { supabase, supabaseAdmin } from "./supabase";
+
+type UpiDetail = Database['public']['Tables']['upi_details']['Row'];
+type InsertUpiDetail = Database['public']['Tables']['upi_details']['Insert'];
+type UpdateUpiDetail = Database['public']['Tables']['upi_details']['Update'];
 
 // Remove API_BASE_URL and MOCK_MATCHES as we'll use Supabase directly
 
 // Admin login function using Supabase
 export const adminLogin = async (credentials: LoginCredentials) => {
   try {
-    // Query the admin_users table directly
-    const { data, error } = await supabaseAdmin
-      .from('admin_users')
-      .select('id, username')
-      .eq('username', credentials.username)
-      .eq('password', credentials.password)
-      .maybeSingle();
+    // First, authenticate with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: credentials.username,
+      password: credentials.password
+    });
 
-    if (error) {
-      console.error('Admin login error:', error);
+    if (authError || !authData.user) {
       return {
         ok: false,
         error: 'Invalid credentials',
@@ -23,10 +25,17 @@ export const adminLogin = async (credentials: LoginCredentials) => {
       };
     }
 
-    if (!data) {
+    // Then, check if the user exists in admin_users table
+    const { data: adminData, error: adminError } = await supabase
+      .from('admin_users')
+      .select('id, username, email')
+      .eq('auth_id', authData.user.id)
+      .maybeSingle();
+
+    if (adminError || !adminData) {
       return {
         ok: false,
-        error: 'Invalid credentials',
+        error: 'User is not an admin',
         status: 401
       };
     }
@@ -34,7 +43,7 @@ export const adminLogin = async (credentials: LoginCredentials) => {
     // Return the admin data
     return {
       ok: true,
-      data: { admin: data },
+      data: { admin: adminData },
       status: 200
     };
   } catch (error: any) {
@@ -243,49 +252,37 @@ export const adminUpdateBookingStatus = async (bookingId: string, status: string
 };
 
 // UPI operations using Supabase
-export const fetchActiveUpiDetail = async (): Promise<typeof upiDetails.$inferSelect> => {
+export const fetchActiveUpiDetail = async (): Promise<UpiDetail> => {
   const { data, error } = await supabase
     .from('upi_details')
     .select('*')
     .eq('is_active', true)
     .single();
-  
-  if (error) {
-    console.error('Error fetching active UPI detail:', error);
-    throw new Error('Failed to fetch active UPI detail');
-  }
-  
+
+  if (error) throw error;
   return data;
 };
 
-export const adminCreateUpiDetail = async (upiDetailData: typeof upiDetails.$inferInsert): Promise<typeof upiDetails.$inferSelect> => {
-  const { data, error } = await supabase
+export const adminCreateUpiDetail = async (upiDetailData: InsertUpiDetail): Promise<UpiDetail> => {
+  const { data, error } = await supabaseAdmin
     .from('upi_details')
     .insert(upiDetailData)
     .select()
     .single();
-  
-  if (error) {
-    console.error('Error creating UPI detail:', error);
-    throw new Error('Failed to create UPI detail');
-  }
-  
+
+  if (error) throw error;
   return data;
 };
 
-export const adminUpdateUpiDetail = async (id: number, upiDetailData: Partial<typeof upiDetails.$inferInsert>): Promise<typeof upiDetails.$inferSelect> => {
-  const { data, error } = await supabase
+export const adminUpdateUpiDetail = async (id: number, upiDetailData: UpdateUpiDetail): Promise<UpiDetail> => {
+  const { data, error } = await supabaseAdmin
     .from('upi_details')
     .update(upiDetailData)
     .eq('id', id)
     .select()
     .single();
-  
-  if (error) {
-    console.error('Error updating UPI detail:', error);
-    throw new Error('Failed to update UPI detail');
-  }
-  
+
+  if (error) throw error;
   return data;
 };
 
@@ -323,35 +320,27 @@ export const adminDeleteTicketType = async (id: number): Promise<boolean> => {
     return true;
   };
 
-export async function fetchUpiDetails(): Promise<typeof upiDetails.$inferSelect[]> {
+export async function fetchUpiDetails(): Promise<UpiDetail[]> {
   const { data, error } = await supabase
     .from('upi_details')
     .select('*');
 
-  if (error) {
-    console.error('Error fetching UPI details:', error);
-    throw new Error('Failed to fetch UPI details');
-  }
-
-  return data || [];
+  if (error) throw error;
+  return data;
 }
 
-export async function createUpiDetail(details: typeof upiDetails.$inferInsert): Promise<typeof upiDetails.$inferSelect> {
+export async function createUpiDetail(details: InsertUpiDetail): Promise<UpiDetail> {
   const { data, error } = await supabase
     .from('upi_details')
     .insert(details)
     .select()
     .single();
 
-  if (error) {
-    console.error('Error creating UPI detail:', error);
-    throw new Error('Failed to create UPI detail');
-  }
-
+  if (error) throw error;
   return data;
 }
 
-export async function updateUpiDetail(id: number, details: Partial<typeof upiDetails.$inferInsert>): Promise<typeof upiDetails.$inferSelect> {
+export async function updateUpiDetail(id: number, details: UpdateUpiDetail): Promise<UpiDetail> {
   const { data, error } = await supabase
     .from('upi_details')
     .update(details)
@@ -359,53 +348,53 @@ export async function updateUpiDetail(id: number, details: Partial<typeof upiDet
     .select()
     .single();
 
-  if (error) {
-    console.error('Error updating UPI detail:', error);
-    throw new Error('Failed to update UPI detail');
-  }
-
+  if (error) throw error;
   return data;
 }
 
 // Admin operations
 export const createDefaultAdmin = async () => {
   try {
-    // Check if any admin exists
-    const { data: existingAdmins, error: checkError } = await supabaseAdmin
+    // Check if admin exists
+    const { data: existingAdmin } = await supabaseAdmin
       .from('admin_users')
-      .select('id')
-      .limit(1);
+      .select('*')
+      .eq('email', 'admin@example.com')
+      .maybeSingle();
 
-    if (checkError) {
-      console.error('Error checking admin users:', checkError);
-      throw checkError;
+    if (existingAdmin) {
+      console.log('Admin user already exists');
+      return;
     }
 
-    // If no admin exists, create default admin
-    if (!existingAdmins || existingAdmins.length === 0) {
-      const defaultAdmin = {
-        username: 'admin',
-        password: 'admin123' // In production, this should be hashed
-      };
-
-      const { data, error } = await supabaseAdmin
-        .from('admin_users')
-        .insert(defaultAdmin)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error creating default admin:', error);
-        throw error;
+    // Create admin user in Supabase Auth
+    const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
+      email: 'admin@example.com',
+      password: 'admin123',
+      options: {
+        data: {
+          role: 'admin'
+        }
       }
+    });
 
-      console.log('Default admin created successfully');
-      return data;
-    }
+    if (authError) throw authError;
+    if (!authData.user) throw new Error('Failed to create admin user');
 
-    return null;
+    // Create admin record in admin_users table
+    const { error: dbError } = await supabaseAdmin
+      .from('admin_users')
+      .insert({
+        email: 'admin@example.com',
+        username: 'admin',
+        auth_id: authData.user.id
+      });
+
+    if (dbError) throw dbError;
+
+    console.log('Admin user created successfully');
   } catch (error) {
-    console.error('Error in createDefaultAdmin:', error);
+    console.error('Error creating admin user:', error);
     throw error;
   }
 };

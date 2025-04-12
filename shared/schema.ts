@@ -10,7 +10,8 @@ export type InsertAdminUser = Omit<AdminUser, "id" | "created_at">;
 
 export const insertAdminUserSchema = z.object({
   username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password is required"),
+  email: z.string().email("Invalid email address"),
+  auth_id: z.string().min(1, "Auth ID is required"),
 });
 
 // Matches

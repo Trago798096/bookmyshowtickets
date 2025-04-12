@@ -11,9 +11,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { AlertCircle, LockKeyhole } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { supabase } from "@/lib/supabase";
 
 const formSchema = z.object({
-  username: z.string().min(1, "Username is required"),
+  email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -31,16 +32,38 @@ export default function AdminLogin() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      username: "",
+      email: "",
       password: "",
     },
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
-      await login(values);
+      // First, authenticate with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: values.email,
+        password: values.password,
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error("Authentication failed");
+
+      // Then, check if the user is an admin
+      const { data: adminData, error: adminError } = await supabase
+        .from('admin_users')
+        .select('*')
+        .eq('auth_id', authData.user.id)
+        .maybeSingle();
+
+      if (adminError || !adminData) {
+        throw new Error("User is not an admin");
+      }
+
+      // Update auth store
+      await login({ username: values.email, password: values.password });
       navigate("/admin");
     } catch (error) {
+      console.error('Login error:', error);
       setShowAlert(true);
     }
   }
@@ -48,46 +71,29 @@ export default function AdminLogin() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="text-primary font-heading font-bold text-3xl flex items-center justify-center mb-2">
-            <span className="text-gray-800">IPL</span>
-            <span className="bg-primary text-white px-2 rounded ml-1">Admin</span>
-          </div>
-          <p className="text-gray-600">Admin Panel for IPL Ticket Management</p>
-        </div>
-        
-        {(error || showAlert) && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>
-              {error || "Invalid credentials. Please try again."}
-            </AlertDescription>
-          </Alert>
-        )}
-        
         <Card>
           <CardHeader>
-            <CardTitle className="text-xl">Admin Login</CardTitle>
-            <CardDescription>Enter your credentials to access the admin panel</CardDescription>
+            <CardTitle className="text-2xl font-bold text-center">Admin Login</CardTitle>
+            <CardDescription className="text-center">
+              Enter your credentials to access the admin dashboard
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
-                  name="username"
+                  name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Username</FormLabel>
+                      <FormLabel>Email</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter your username" {...field} />
+                        <Input type="email" placeholder="admin@example.com" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                
                 <FormField
                   control={form.control}
                   name="password"
@@ -95,33 +101,28 @@ export default function AdminLogin() {
                     <FormItem>
                       <FormLabel>Password</FormLabel>
                       <FormControl>
-                        <Input type="password" placeholder="Enter your password" {...field} />
+                        <Input type="password" placeholder="••••••••" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                
+                {showAlert && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>
+                      {error || "Invalid credentials. Please try again."}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? "Logging in..." : "Login"}
                 </Button>
               </form>
             </Form>
           </CardContent>
-          <CardFooter className="flex justify-between border-t pt-4">
-            <div className="text-xs text-gray-500">
-              <LockKeyhole className="inline h-3 w-3 mr-1" />
-              Secure admin access only
-            </div>
-            <div className="text-xs text-gray-500">
-              IPL Admin Panel
-            </div>
-          </CardFooter>
         </Card>
-
-        <div className="mt-6 text-center text-sm text-gray-500">
-          <p className="mt-2">Demo credentials: username: admin, password: admin123</p>
-        </div>
       </div>
     </div>
   );

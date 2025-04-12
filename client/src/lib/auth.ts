@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AdminUser, LoginCredentials } from '@shared/schema';
-import { adminLogin } from './api';
+import { supabase } from './supabase';
 
 interface AuthState {
   admin: Omit<AdminUser, 'password'> | null;
@@ -22,20 +22,27 @@ export const useAuthStore = create<AuthState>()(
       login: async (credentials) => {
         set({ isLoading: true, error: null });
         try {
-          const result = await adminLogin(credentials);
-          
-          if (!result.ok || !result.data) {
-            throw new Error(result.error || 'Login failed');
-          }
+          // Sign in with Supabase Auth
+          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email: credentials.username,
+            password: credentials.password,
+          });
 
-          const { admin } = result.data;
-          
-          if (!admin) {
-            throw new Error('Invalid response from server');
-          }
+          if (authError) throw authError;
+          if (!authData.user) throw new Error('Authentication failed');
+
+          // Get admin data
+          const { data: adminData, error: adminError } = await supabase
+            .from('admin_users')
+            .select('*')
+            .eq('auth_id', authData.user.id)
+            .maybeSingle();
+
+          if (adminError) throw adminError;
+          if (!adminData) throw new Error('User is not an admin');
 
           set({ 
-            admin, 
+            admin: adminData, 
             isAuthenticated: true, 
             isLoading: false,
             error: null
@@ -43,27 +50,32 @@ export const useAuthStore = create<AuthState>()(
 
           // Store in localStorage for redundancy
           localStorage.setItem('isAdmin', 'true');
-          localStorage.setItem('adminData', JSON.stringify(admin));
+          localStorage.setItem('adminData', JSON.stringify(adminData));
         } catch (error: any) {
           console.error('Login error:', error);
           set({ 
             error: error.message || 'Login failed. Please check your credentials.', 
-            isLoading: false,
+            isLoading: false 
+          });
+        }
+      },
+      logout: async () => {
+        try {
+          await supabase.auth.signOut();
+          set({ 
+            admin: null, 
             isAuthenticated: false,
-            admin: null
+            error: null
           });
           localStorage.removeItem('isAdmin');
           localStorage.removeItem('adminData');
+        } catch (error) {
+          console.error('Logout error:', error);
         }
-      },
-      logout: () => {
-        set({ admin: null, isAuthenticated: false, error: null });
-        localStorage.removeItem('isAdmin');
-        localStorage.removeItem('adminData');
       },
     }),
     {
-      name: 'admin-auth',
+      name: 'admin-auth-storage',
     }
   )
 );
